@@ -214,6 +214,8 @@ namespace csv {
                 const DataType type = internals::data_type(value);
                 if (type >= DataType::CSV_INT8 && type <= DataType::CSV_DOUBLE) {
                     out.append(value.data(), value.size());
+                } else if (type == DataType::CSV_NULL) {
+                    out += "null";
                 } else {
                     out += '"';
                     append_json_escaped(out, value);
