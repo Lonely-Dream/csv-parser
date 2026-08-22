@@ -1,6 +1,8 @@
 #include <catch2/catch_all.hpp>
 #include "csv.hpp"
+#include "shared/file_guard.hpp"
 
+#include <fstream>
 #include <sstream>
 using namespace csv;
 
@@ -91,6 +93,36 @@ TEST_CASE("CSVRow to_json_array() Test() - Mixed", "[csv_mixed_row_to_json_array
     SECTION("Subset") {
         REQUIRE(row.to_json_array({ "B", "C" }) == "[234,\"ABCD\"]");
         REQUIRE(row.to_json_array({ "B", "A" }) == "[234,1234.3]");
+    }
+}
+
+TEST_CASE("CSVRow to_json() serializes empty fields as null", "[csv_row_to_json][csv_null]") {
+    FileGuard cleanup("./tests/data/tmp_csv_row_json_null.csv");
+    {
+        std::ofstream out(cleanup.filename, std::ios::binary);
+        REQUIRE(out);
+        out << "Example1,ShouldBeNull,Example2\nhello,,world\n";
+    }
+
+    auto validate = [](CSVReader& reader) {
+        CSVRow row;
+        REQUIRE(reader.read_row(row));
+        REQUIRE(row.to_json() == "{\"Example1\":\"hello\",\"ShouldBeNull\":null,\"Example2\":\"world\"}");
+        REQUIRE(row.to_json({ "ShouldBeNull" }) == "{\"ShouldBeNull\":null}");
+        REQUIRE(row.to_json_array() == "[\"hello\",null,\"world\"]");
+        REQUIRE(row.to_json_array({ "ShouldBeNull" }) == "[null]");
+    };
+
+    SECTION("Memory-mapped file path") {
+        CSVReader reader(cleanup.filename);
+        validate(reader);
+    }
+
+    SECTION("Stream path") {
+        std::ifstream infile(cleanup.filename, std::ios::binary);
+        REQUIRE(infile);
+        CSVReader reader(infile, CSVFormat());
+        validate(reader);
     }
 }
 
