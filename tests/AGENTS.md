@@ -4,7 +4,8 @@
 
 ## Test Checklist
 
-- [ ] Tests both mmap and stream paths (use `SECTION`)
+- [ ] Tests both mmap and stream paths when parser behavior is under test (use `SECTION`)
+- [ ] Uses an in-memory row for pure JSON serialization tests (no temporary files or mmap/stream duplication)
 - [ ] Distinct values per column
 - [ ] ≥500K rows to cross chunk boundary
 - [ ] Documents bug it would catch
@@ -139,6 +140,13 @@ SECTION("std::istream path") {
 ```
 
 This pattern catches path-specific bugs like issue #281 (stream-only parsing error).
+
+Do not use this pattern for pure `CSVRow` JSON serialization tests. Once a row has
+been constructed, `to_json()` and `to_json_array()` do not depend on whether it
+came from mmap or a stream. Build the row in memory (for example with the
+`make_csv_row()` helper in `test_csv_row_json.cpp`) and test serialization once.
+Temporary files and duplicated parser-path sections add CI cost without increasing
+coverage of the behavior under test.
 
 #### File Cleanup
 Tests use RAII cleanup via [FileGuard](shared/file_guard.hpp) — see the **Shared Test Utilities** section above for full usage.

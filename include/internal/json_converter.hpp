@@ -93,6 +93,28 @@ namespace csv {
             return out;
         }
 
+        inline void append_json_number_without_leading_zeros(
+            std::string& out,
+            csv::string_view value
+        ) noexcept {
+            size_t first = 0;
+            if (first < value.size() && (value[first] == '+' || value[first] == '-')) {
+                if (value[first] == '-') {
+                    out += '-';
+                }
+                ++first;
+            }
+
+            while (first + 1 < value.size()
+                && value[first] == '0'
+                && value[first + 1] >= '0'
+                && value[first + 1] <= '9') {
+                ++first;
+            }
+
+            out.append(value.data() + first, value.size() - first);
+        }
+
         class JsonConverter {
         public:
             JsonConverter() = default;
@@ -213,7 +235,7 @@ namespace csv {
             void append_json_value(std::string& out, csv::string_view value) const {
                 const DataType type = internals::data_type(value);
                 if (type >= DataType::CSV_INT8 && type <= DataType::CSV_DOUBLE) {
-                    out.append(value.data(), value.size());
+                    append_json_number_without_leading_zeros(out, value);
                 } else if (type == DataType::CSV_NULL) {
                     out += "null";
                 } else {

@@ -1,8 +1,6 @@
 #include <catch2/catch_all.hpp>
 #include "csv.hpp"
-#include "shared/file_guard.hpp"
 
-#include <fstream>
 #include <sstream>
 using namespace csv;
 
@@ -97,33 +95,27 @@ TEST_CASE("CSVRow to_json_array() Test() - Mixed", "[csv_mixed_row_to_json_array
 }
 
 TEST_CASE("CSVRow to_json() serializes empty fields as null", "[csv_row_to_json][csv_null]") {
-    FileGuard cleanup("./tests/data/tmp_csv_row_json_null.csv");
-    {
-        std::ofstream out(cleanup.filename, std::ios::binary);
-        REQUIRE(out);
-        out << "Example1,ShouldBeNull,Example2\nhello,,world\n";
-    }
+    CSVRow row = make_csv_row(
+        { "hello", "", "world" },
+        { "Example1", "ShouldBeNull", "Example2" }
+    );
 
-    auto validate = [](CSVReader& reader) {
-        CSVRow row;
-        REQUIRE(reader.read_row(row));
-        REQUIRE(row.to_json() == "{\"Example1\":\"hello\",\"ShouldBeNull\":null,\"Example2\":\"world\"}");
-        REQUIRE(row.to_json({ "ShouldBeNull" }) == "{\"ShouldBeNull\":null}");
-        REQUIRE(row.to_json_array() == "[\"hello\",null,\"world\"]");
-        REQUIRE(row.to_json_array({ "ShouldBeNull" }) == "[null]");
-    };
+    REQUIRE(row.to_json() == "{\"Example1\":\"hello\",\"ShouldBeNull\":null,\"Example2\":\"world\"}");
+    REQUIRE(row.to_json({ "ShouldBeNull" }) == "{\"ShouldBeNull\":null}");
+    REQUIRE(row.to_json_array() == "[\"hello\",null,\"world\"]");
+    REQUIRE(row.to_json_array({ "ShouldBeNull" }) == "[null]");
+}
 
-    SECTION("Memory-mapped file path") {
-        CSVReader reader(cleanup.filename);
-        validate(reader);
-    }
+// Reported in: https://github.com/vincentlaucsb/csv-parser/issues/323
+TEST_CASE("CSVRow JSON serialization removes numeric leading zeros", "[csv_row_to_json][issue_323]") {
+    CSVRow row = make_csv_row(
+        { "069", "-00042", "+009", "000", "000.5", "001e2" },
+        { "positive", "negative", "positive_sign", "zero", "fraction", "exponent" }
+    );
 
-    SECTION("Stream path") {
-        std::ifstream infile(cleanup.filename, std::ios::binary);
-        REQUIRE(infile);
-        CSVReader reader(infile, CSVFormat());
-        validate(reader);
-    }
+    REQUIRE(row.to_json()
+        == "{\"positive\":69,\"negative\":-42,\"positive_sign\":9,\"zero\":0,\"fraction\":0.5,\"exponent\":1e2}");
+    REQUIRE(row.to_json_array() == "[69,-42,9,0,0.5,1e2]");
 }
 
 // Reported in: https://github.com/vincentlaucsb/csv-parser/issues/68
