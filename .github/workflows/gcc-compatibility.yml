@@ -1,0 +1,104 @@
+name: Older GCC compatibility
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "include/**"
+      - "CMakeLists.txt"
+      - "cmake/**"
+      - "single_header.json"
+      - "tests/compatibility/gcc/**"
+      - ".github/workflows/gcc-compatibility.yml"
+  pull_request:
+    branches: [master]
+    paths:
+      - "include/**"
+      - "CMakeLists.txt"
+      - "cmake/**"
+      - "single_header.json"
+      - "tests/compatibility/gcc/**"
+      - ".github/workflows/gcc-compatibility.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  gcc:
+    name: GCC ${{ matrix.version }} / C++17
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - version: "8.5.0"
+            image: gcc:8.5.0
+          - version: "9.5.0"
+            image: gcc:9.5.0-bullseye
+          - version: "10.5.0"
+            image: gcc:10.5.0-bullseye
+          # The first GCC 11 release covers the floating charconv boundary.
+          - version: "11.1.0"
+            image: gcc:11.1.0-bullseye
+    env:
+      GCC_IMAGE: ${{ matrix.image }}
+      GCC_VERSION: ${{ matrix.version }}
+    steps:
+      # Keep JavaScript actions on the host; old images may lack Node's glibc.
+      - uses: actions/checkout@v5
+
+      - name: Install single_header
+        id: single-header
+        uses: vincentlaucsb/single_header@0.1.0
+        with:
+          run: "false"
+
+      - name: Generate canonical single header
+        run: |
+          cmake -S . -B build/gcc-header -DCSV_CXX_STANDARD=17 \
+            -DCSV_BUILD_TESTS=OFF -DCSV_BUILD_PROGRAMS=OFF \
+            -DCSV_SINGLE_HEADER_EXECUTABLE="${{ steps.single-header.outputs.executable }}"
+          cmake --build build/gcc-header --target generate_single_header
+
+      - name: Prepare portable CMake and compiler
+        id: toolchain
+        run: |
+          mkdir -p "$RUNNER_TEMP/csv-cmake"
+          curl --fail --location --retry 3 \
+            https://cmake.org/files/v3.31/cmake-3.31.6-linux-x86_64.tar.gz \
+            --output "$RUNNER_TEMP/csv-cmake.tar.gz"
+          echo "5a1133ff103c71eb5120e2cc3de922733e7d8a26a98ae716397e8676adb367bf  $RUNNER_TEMP/csv-cmake.tar.gz" | sha256sum --check
+          tar -xzf "$RUNNER_TEMP/csv-cmake.tar.gz" -C "$RUNNER_TEMP/csv-cmake" --strip-components=1
+          docker pull "$GCC_IMAGE"
+          docker run --rm "$GCC_IMAGE" g++ --version
+          test "$(docker run --rm "$GCC_IMAGE" g++ -dumpfullversion)" = "$GCC_VERSION"
+
+      - name: Build and run CMake library consumers
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" \
+            -v "$GITHUB_WORKSPACE:/src" -v "$RUNNER_TEMP/csv-cmake:/cmake:ro" \
+            -w /src "$GCC_IMAGE" bash -euc '
+              /cmake/bin/cmake -S tests/compatibility/gcc -B build/gcc-linked -DCMAKE_BUILD_TYPE=Release
+              /cmake/bin/cmake --build build/gcc-linked --parallel 2
+              /cmake/bin/ctest --test-dir build/gcc-linked --output-on-failure
+            '
+
+      - name: Build and run standalone generated header consumers
+        # Preserve independent diagnostics even if the linked-library check fails.
+        if: ${{ !cancelled() && steps.toolchain.outcome == 'success' }}
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" \
+            -v "$GITHUB_WORKSPACE:/src" -v "$RUNNER_TEMP/csv-cmake:/cmake:ro" \
+            -w /src "$GCC_IMAGE" bash -euc '
+              /cmake/bin/cmake -S tests/compatibility/gcc -B build/gcc-generated \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DCSV_COMPAT_SINGLE_HEADER_DIR=/src/build/gcc-header/single_include_generated
+              /cmake/bin/cmake --build build/gcc-generated --parallel 2
+              /cmake/bin/ctest --test-dir build/gcc-generated --output-on-failure
+            '
