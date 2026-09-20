@@ -3,7 +3,14 @@ name: Compatibility Edge Cases
 permissions:
   contents: read
 
+# New PR commits supersede older checks; keep every non-PR run independent.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
+  # Bound compiler memory use while taking advantage of multiple runner cores.
+  CMAKE_BUILD_PARALLEL_LEVEL: "2"
   CSV_FETCHCONTENT_BASE_DIR: ${{ github.workspace }}/.cache/fetchcontent
 
 on:
@@ -29,10 +36,8 @@ jobs:
     runs-on: windows-latest
 
     steps:
-    - name: Checkout repository and submodules
+    - name: Checkout repository
       uses: actions/checkout@v5
-      with:
-        submodules: recursive
 
     - name: Set up MSVC developer command prompt
       uses: ilammy/msvc-dev-cmd@v1
@@ -43,18 +48,13 @@ jobs:
       with:
         run: "false"
 
-    - name: Cache CMake FetchContent dependencies
-      uses: actions/cache@v5
-      with:
-        path: ${{ env.CSV_FETCHCONTENT_BASE_DIR }}
-        key: fetchcontent-${{ runner.os }}-msvc-no-zc-${{ hashFiles('CMakeLists.txt', 'tests/CMakeLists.txt') }}
-
     - name: Configure CMake (for single-header generation)
       run: >
         cmake -S ${{ github.workspace }}
         -B ${{ github.workspace }}/build/no-zc-cplusplus
         -DCSV_CXX_STANDARD=20
         -DCSV_BUILD_PROGRAMS=OFF
+        -DCSV_BUILD_TESTS=OFF
         -DBUILD_PYTHON=OFF
         -DCSV_SINGLE_HEADER_EXECUTABLE="${{ steps.single-header.outputs.executable }}"
 
