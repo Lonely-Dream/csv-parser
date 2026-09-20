@@ -132,8 +132,19 @@ SOFTWARE.
 #include <system_error>
 #endif
 
-#if defined(CLASSIFY_SCALAR_HAS_CXX17) && !defined(_LIBCPP_VERSION) && !defined(CLASSIFY_SCALAR_DISABLE_STD_FLOAT_FROM_CHARS)
+#if CLASSIFY_SCALAR_CPLUSPLUS >= 201703L && defined(CSV_HAS_STD_FLOATING_POINT_FROM_CHARS)
 #define CLASSIFY_SCALAR_HAS_STD_FLOAT_FROM_CHARS
+#elif defined(__cpp_lib_to_chars) && __cpp_lib_to_chars >= 201611L
+// In single-header file integration scenarios, rely on the standard library
+// feature-test macro because the csv-parser CMake probe is unavailable.
+#define CLASSIFY_SCALAR_HAS_STD_FLOAT_FROM_CHARS
+#endif
+// Reserve this macro to allow users to manually disable the use of
+// std::from_chars for floating-point classification.
+#ifdef CLASSIFY_SCALAR_DISABLE_STD_FLOAT_FROM_CHARS
+#ifdef CLASSIFY_SCALAR_HAS_STD_FLOAT_FROM_CHARS
+#undef CLASSIFY_SCALAR_HAS_STD_FLOAT_FROM_CHARS
+#endif
 #endif
 
 namespace classify_scalar {
