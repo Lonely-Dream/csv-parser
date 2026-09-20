@@ -10,7 +10,14 @@ permissions:
   contents: read
   pull-requests: write
 
+# New PR commits supersede older checks; keep every non-PR run independent.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
+  # Bound compiler memory use while taking advantage of multiple runner cores.
+  CMAKE_BUILD_PARALLEL_LEVEL: "2"
   CSV_FETCHCONTENT_BASE_DIR: ${{ github.workspace }}/.cache/fetchcontent
 
 jobs:

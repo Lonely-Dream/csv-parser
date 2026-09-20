@@ -8,6 +8,15 @@ on:
   schedule:
     - cron: '0 2 * * 0'  # Weekly on Sunday at 2 AM UTC
 
+# New PR commits supersede older checks; keep every non-PR run independent.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # Bound compiler memory use while taking advantage of multiple runner cores.
+  CMAKE_BUILD_PARALLEL_LEVEL: "2"
+
 jobs:
   analyze:
     name: CodeQL C++
@@ -31,15 +40,10 @@ jobs:
     - name: Initialize CodeQL
       uses: github/codeql-action/init@v3
       with:
-        language: ${{ matrix.language }}
+        languages: ${{ matrix.language }}
         queries: security-and-quality
         config-file: ./.github/codeql/codeql-config.yml
-    
-    - name: Install dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y build-essential cmake
-    
+
     - name: Configure CMake
       run: |
         mkdir -p build
